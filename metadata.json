@@ -1,0 +1,5 @@
+{
+  "name": "Gerador de Áudio em Lote",
+  "description": "Um aplicativo para gerar áudios longos e humanizados a partir de arquivos de texto em lote, utilizando a API do Google Gemini. Permite o upload de arquivos .docx, personalização de voz e estilo para cada arquivo e processamento simultâneo.",
+  "requestFramePermissions": []
+}

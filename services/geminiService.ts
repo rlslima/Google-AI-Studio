@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Modality } from "@google/genai";
 import type { GenerationSettings } from '../types';
 import { decode, decodeAudioData } from '../utils/audioUtils';
@@ -107,9 +106,19 @@ export async function* generateSpeechInChunks(
         if (signal.aborted) throw new Error('AbortError');
 
         const chunkText = chunks[i];
-        const prompt = `${settings.styleDescription || 'Say:'} ${settings.tone || ''} ${chunkText}`;
-        const progress = ((i + 1) / totalChunks) * 100;
+        let prompt = chunkText;
+
+        if (settings.styleDescription && settings.styleDescription.trim().length > 0) {
+            let styleDesc = settings.styleDescription.trim();
+            if (!styleDesc.endsWith(':')) {
+                styleDesc += ':';
+            }
+            prompt = `${styleDesc} ${chunkText}`;
+        }
         
+        const progress = ((i + 1) / totalChunks) * 100;
+        let result: { chunk?: AudioBuffer; error?: string } = {};
+
         try {
             const response = await ai.models.generateContent({
                 model: "gemini-2.5-flash-preview-tts",
@@ -128,15 +137,14 @@ export async function* generateSpeechInChunks(
 
             const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
             if (base64Audio) {
-                const audioBuffer = await decodeAudioData(
+                result.chunk = await decodeAudioData(
                     decode(base64Audio),
                     outputAudioContext,
                     24000,
                     1
                 );
-                yield { progress, chunk: audioBuffer };
             } else {
-                 let errorMessage = "Não foram recebidos dados de áudio da API.";
+                let errorMessage = "Não foram recebidos dados de áudio da API.";
                 const finishReason = response.candidates?.[0]?.finishReason;
                 if (response.promptFeedback?.blockReason) {
                     errorMessage = `Geração bloqueada. Motivo: ${response.promptFeedback.blockReason}`;
@@ -144,13 +152,15 @@ export async function* generateSpeechInChunks(
                     errorMessage = `Geração interrompida. Motivo: ${finishReason}`;
                 }
                 console.error(`API response without audio data for chunk ${i+1}:`, JSON.stringify(response, null, 2));
-                yield { progress, error: errorMessage };
+                result.error = errorMessage;
             }
         } catch (error: any) {
              console.error(`Error processing chunk ${i + 1}:`, error);
              if (signal.aborted) throw new Error('AbortError');
-             yield { progress, error: error.message };
+             result.error = error.message;
         }
+        
+        yield { progress, ...result };
 
         if (i < totalChunks - 1) {
             await new Promise(resolve => setTimeout(resolve, delay));

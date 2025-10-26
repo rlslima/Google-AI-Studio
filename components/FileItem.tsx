@@ -1,4 +1,3 @@
-
 import React from 'react';
 import type { AudioFile, GenerationSettings } from '../types';
 import { FileStatus } from '../types';
@@ -49,7 +48,8 @@ const FileItem: React.FC<FileItemProps> = ({ file, onGenerate, onCancel, onUpdat
     
     const statusInfo = getStatusInfo();
     const isProcessing = file.status === FileStatus.PROCESSING;
-    const isActionDisabled = isProcessing || file.status === FileStatus.COMPLETED;
+    // Only disable controls while actively processing.
+    const isActionDisabled = isProcessing;
 
     const isThisPreviewLoading = previewState?.status === 'loading' && previewState.voice === file.settings.voice;
     const isThisPreviewPlaying = previewState?.status === 'playing' && previewState.voice === file.settings.voice;
@@ -145,7 +145,7 @@ const FileItem: React.FC<FileItemProps> = ({ file, onGenerate, onCancel, onUpdat
                             <XCircleIcon className="w-5 h-5"/> Cancelar
                         </button>
                     ) : (
-                        <button onClick={() => onGenerate(file.id)} disabled={file.status === FileStatus.COMPLETED} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-md flex items-center gap-2 w-full md:w-auto justify-center disabled:bg-slate-600 disabled:cursor-not-allowed">
+                        <button onClick={() => onGenerate(file.id)} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-md flex items-center gap-2 w-full md:w-auto justify-center disabled:bg-slate-600 disabled:cursor-not-allowed">
                            <PlayIcon className="w-5 h-5"/> Gerar
                         </button>
                     )}

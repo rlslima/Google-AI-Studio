@@ -60,7 +60,9 @@ const FileItem: React.FC<FileItemProps> = ({ file, onGenerate, onCancel, onUpdat
                 {/* File Info */}
                 <div className="flex-shrink-0 md:w-56 lg:w-72 mb-4 md:mb-0">
                     <p className="font-bold text-white truncate" title={file.file.name}>{file.file.name}</p>
-                    <p className={`text-xs font-semibold ${statusInfo.color}`}>{statusInfo.text}</p>
+                    {!isProcessing && (
+                         <p className={`text-xs font-semibold ${statusInfo.color} mt-1`}>{statusInfo.text}</p>
+                    )}
                     <p className="text-xs text-slate-400 mt-1">Total de Palavras: {file.wordCount}</p>
                 </div>
 
@@ -115,7 +117,7 @@ const FileItem: React.FC<FileItemProps> = ({ file, onGenerate, onCancel, onUpdat
                         </div>
                          {/* Chunk Size */}
                         <div className="flex-shrink-0 w-28">
-                            <label className="text-xs text-slate-400 block mb-1">Palavras/Pedaço</label>
+                            <label className="text-xs text-slate-400 block mb-1">Caracteres/Pedaço</label>
                             <input
                                 disabled={isActionDisabled}
                                 type="number"
@@ -141,9 +143,23 @@ const FileItem: React.FC<FileItemProps> = ({ file, onGenerate, onCancel, onUpdat
                 {/* Action Button & Delete */}
                 <div className="flex flex-shrink-0 items-center justify-end gap-2 mt-4 md:mt-0 md:self-end">
                     {isProcessing ? (
-                        <button onClick={() => onCancel(file.id)} className="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded-md flex items-center gap-2 w-full md:w-auto justify-center">
-                            <XCircleIcon className="w-5 h-5"/> Cancelar
-                        </button>
+                        <div className="flex items-center gap-2 w-full md:w-[280px]">
+                            <div className="flex-grow flex items-center gap-2">
+                                <p className={`text-xs font-semibold ${statusInfo.color} flex-shrink-0`}>{statusInfo.text}</p>
+                                <div className="w-full overflow-hidden h-2.5 text-xs flex rounded-full bg-slate-700">
+                                    <div 
+                                        style={{ width: `${file.progress}%` }} 
+                                        className="shadow-none rounded-full flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-sky-500 to-indigo-500 transition-all duration-500 ease-out progress-bar-striped progress-bar-animated"
+                                    ></div>
+                                </div>
+                                <span className="text-xs font-semibold text-blue-400 w-8 text-right">
+                                    {file.progress.toFixed(0)}%
+                                </span>
+                            </div>
+                            <button onClick={() => onCancel(file.id)} className="bg-yellow-600/80 hover:bg-yellow-600 text-white p-2 rounded-md flex items-center justify-center transition-colors" title="Cancelar">
+                                <XCircleIcon className="w-5 h-5"/>
+                            </button>
+                        </div>
                     ) : (
                         <button onClick={() => onGenerate(file.id)} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-md flex items-center gap-2 w-full md:w-auto justify-center disabled:bg-slate-600 disabled:cursor-not-allowed">
                            <PlayIcon className="w-5 h-5"/> Gerar
@@ -160,23 +176,9 @@ const FileItem: React.FC<FileItemProps> = ({ file, onGenerate, onCancel, onUpdat
                 </div>
             </div>
 
-            {/* Progress Bar & Error */}
-            {isProcessing && (
-                 <div className="relative pt-1">
-                    <div className="flex mb-2 items-center justify-between">
-                         <div className="text-right w-full">
-                            <span className="text-xs font-semibold inline-block text-blue-400">
-                                {file.progress.toFixed(0)}%
-                            </span>
-                        </div>
-                    </div>
-                    <div className="overflow-hidden h-2.5 text-xs flex rounded-full bg-slate-700">
-                        <div style={{ width: `${file.progress}%` }} className="shadow-none rounded-full flex flex-col text-center whitespace-nowrap text-white justify-center bg-gradient-to-r from-sky-500 to-indigo-500 transition-all duration-500 ease-out progress-bar-striped progress-bar-animated"></div>
-                    </div>
-                </div>
-            )}
+            {/* Error Message */}
              {file.status === FileStatus.ERROR && file.error && (
-                <p className="text-sm text-red-400 mt-2">Erro: {file.error}</p>
+                <p className="text-sm text-red-400">Erro: {file.error}</p>
             )}
         </div>
     );

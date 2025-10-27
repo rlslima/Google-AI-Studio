@@ -1,3 +1,5 @@
+
+
 import { GoogleGenAI, Modality } from "@google/genai";
 import type { GenerationSettings } from '../types';
 import { decode, decodeAudioData } from '../utils/audioUtils';
@@ -6,44 +8,46 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 const outputAudioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
 
-function splitText(text: string, maxWords: number): string[] {
+function splitText(text: string, maxChars: number): string[] {
     if (!text) return [];
-
-    const words = text.trim().split(/\s+/);
-    if (words.length <= maxWords) {
+    if (text.length <= maxChars) {
         return [text];
     }
 
     const chunks: string[] = [];
-    let currentChunkStartIndex = 0;
+    let remainingText = text.trim();
 
-    while (currentChunkStartIndex < words.length) {
-        let potentialEndIndex = Math.min(currentChunkStartIndex + maxWords, words.length);
-        
-        if (potentialEndIndex === words.length) {
-            chunks.push(words.slice(currentChunkStartIndex).join(' '));
+    while (remainingText.length > 0) {
+        if (remainingText.length <= maxChars) {
+            chunks.push(remainingText);
             break;
         }
 
-        let splitIndex = -1;
-        for (let i = potentialEndIndex - 1; i >= currentChunkStartIndex; i--) {
-            const word = words[i];
-            if (/[.?!,]$/.test(word)) {
-                splitIndex = i + 1;
-                break;
+        let chunkEndIndex = maxChars;
+
+        const lastPeriod = remainingText.lastIndexOf('.', chunkEndIndex);
+        const lastQuestion = remainingText.lastIndexOf('?', chunkEndIndex);
+        const lastExclamation = remainingText.lastIndexOf('!', chunkEndIndex);
+        
+        const lastSentenceEnd = Math.max(lastPeriod, lastQuestion, lastExclamation);
+
+        if (lastSentenceEnd > -1 && lastSentenceEnd > 0) {
+            chunkEndIndex = lastSentenceEnd + 1;
+        } else {
+            const lastSpace = remainingText.lastIndexOf(' ', chunkEndIndex);
+            if (lastSpace > -1 && lastSpace > 0) {
+                chunkEndIndex = lastSpace + 1;
             }
         }
         
-        if (splitIndex === -1) {
-            splitIndex = potentialEndIndex;
-        }
-
-        chunks.push(words.slice(currentChunkStartIndex, splitIndex).join(' '));
-        currentChunkStartIndex = splitIndex;
+        const chunk = remainingText.substring(0, chunkEndIndex);
+        chunks.push(chunk.trim());
+        remainingText = remainingText.substring(chunkEndIndex).trim();
     }
-
-    return chunks.filter(c => c.trim().length > 0);
+    
+    return chunks.filter(c => c.length > 0);
 }
+
 
 export async function generateVoicePreview(voiceName: string, signal: AbortSignal): Promise<AudioBuffer> {
     const previewText = "Olá, esta é uma amostra da minha voz. Use-a para decidir se é a certa para o seu projeto.";
@@ -94,12 +98,17 @@ export async function* generateSpeechInChunks(
     text: string,
     settings: GenerationSettings,
     signal: AbortSignal
-): AsyncGenerator<{ progress: number; chunk?: AudioBuffer; error?: string }> {
+): AsyncGenerator<{ totalChunks?: number, progress?: number; chunk?: AudioBuffer; error?: string }> {
     const chunks = splitText(text, settings.chunkSize);
     const totalChunks = chunks.length;
+
+    // First, yield the total number of chunks for the UI to set up its simulation
+    yield { totalChunks };
+    
     if (totalChunks === 0) {
         return;
     }
+
     const delay = 60000 / settings.reqPerMin;
 
     for (let i = 0; i < totalChunks; i++) {
@@ -116,8 +125,7 @@ export async function* generateSpeechInChunks(
             prompt = `${styleDesc} ${chunkText}`;
         }
         
-        const progress = ((i + 1) / totalChunks) * 100;
-        let result: { chunk?: AudioBuffer; error?: string } = {};
+        const result: { chunk?: AudioBuffer; error?: string } = {};
 
         try {
             const response = await ai.models.generateContent({
@@ -150,6 +158,9 @@ export async function* generateSpeechInChunks(
                     errorMessage = `Geração bloqueada. Motivo: ${response.promptFeedback.blockReason}`;
                 } else if (finishReason && finishReason !== 'STOP') {
                     errorMessage = `Geração interrompida. Motivo: ${finishReason}`;
+                    if (finishReason === 'OTHER') {
+                        errorMessage += ". Isso pode ser causado por um pedaço de texto muito grande. Tente reduzir o valor de 'Caracteres/Pedaço'.";
+                    }
                 }
                 console.error(`API response without audio data for chunk ${i+1}:`, JSON.stringify(response, null, 2));
                 result.error = errorMessage;
@@ -159,8 +170,9 @@ export async function* generateSpeechInChunks(
              if (signal.aborted) throw new Error('AbortError');
              result.error = error.message;
         }
-        
-        yield { progress, ...result };
+
+        // Yield the result of the operation for this chunk
+        yield result;
 
         if (i < totalChunks - 1) {
             await new Promise(resolve => setTimeout(resolve, delay));

@@ -1,5 +1,6 @@
 
-import React, { useState, useRef, useCallback } from 'react';
+
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import type { AudioFile, GenerationSettings } from './types';
 import { FileStatus } from './types';
 import { readDocx } from './utils/fileUtils';
@@ -9,6 +10,7 @@ import { VOICES } from './constants';
 import Header from './components/Header';
 import Controls from './components/Controls';
 import FileList from './components/FileList';
+
 
 const App: React.FC = () => {
     const [files, setFiles] = useState<AudioFile[]>([]);
@@ -43,8 +45,8 @@ const App: React.FC = () => {
                         style: 'Personalizado',
                         styleDescription: '',
                         tone: '',
-                        chunkSize: 1000,
-                        reqPerMin: 60, // Increased for faster generation
+                        chunkSize: 4500, // Changed to characters, default 4500
+                        reqPerMin: 60,
                     },
                 };
             })
@@ -60,6 +62,7 @@ const App: React.FC = () => {
     const updateFileSettings = useCallback((id: string, settingsUpdate: Partial<GenerationSettings>) => {
         setFiles(prev => prev.map(f => f.id === id ? { ...f, settings: { ...f.settings, ...settingsUpdate } } : f));
     }, []);
+    
 
     const handlePreviewVoice = useCallback(async (voice: string) => {
         if (previewAudioSourceRef.current) {
@@ -130,21 +133,36 @@ const App: React.FC = () => {
                 fileToProcess.settings,
                 controller.signal
             );
-
+            
+            // First yield gives us the setup information to start the simulation
+            const firstResult = await generator.next();
+            if (firstResult.done || typeof firstResult.value.totalChunks !== 'number') {
+                updateFile(id, { status: FileStatus.COMPLETED, progress: 100 });
+                return; 
+            }
+            
+            const { totalChunks } = firstResult.value;
+            if (totalChunks === 0) {
+                 updateFile(id, { status: FileStatus.COMPLETED, progress: 100 });
+                 return;
+            }
+            
+            let processedChunks = 0;
+            // Process the rest of the generator
             for await (const update of generator) {
-                if (controller.signal.aborted) {
-                    // If canceled, the status is set in handleCancel. We just stop processing.
-                    return;
-                }
+                if (controller.signal.aborted) break;
+
+                processedChunks++;
+                // Calculate progress based on chunks completed. This is more accurate.
+                const progress = (processedChunks / totalChunks) * 100;
+                // We'll cap at 99 and set to 100 only on final completion.
+                updateFile(id, { progress: Math.min(99, progress) });
+
                 if (update.chunk) audioChunks.push(update.chunk);
                 if (update.error) generationErrors.push(update.error);
-                updateFile(id, { progress: update.progress });
             }
-
-            if (controller.signal.aborted) {
-                // If canceled, the status is set in handleCancel. We just stop processing.
-                return;
-            }
+            
+            if (controller.signal.aborted) return;
             
             if (audioChunks.length === 0) {
                 const errorMessage = generationErrors.length > 0 ? generationErrors.join(', ') : 'Nenhum áudio foi gerado.';
@@ -152,10 +170,7 @@ const App: React.FC = () => {
             }
 
             const fullAudio = await concatenateAudioBuffers(audioChunks);
-            let finalState: Partial<AudioFile> = {
-                progress: 100,
-                fullAudio,
-            };
+            let finalState: Partial<AudioFile> = { progress: 100, fullAudio };
 
             if (generationErrors.length > 0) {
                 finalState.status = FileStatus.ERROR;
@@ -182,14 +197,9 @@ const App: React.FC = () => {
                     URL.revokeObjectURL(url);
                 }
             }
-            
             updateFile(id, finalState);
-
         } catch (error: any) {
-            if (error.name === 'AbortError' || error.message === 'AbortError') {
-                console.log(`Generation for ${id} was intentionally canceled.`);
-                // Status is set in handleCancel
-            } else {
+            if (error.name !== 'AbortError' && error.message !== 'AbortError') {
                 console.error('Generation failed:', error);
                 updateFile(id, { status: FileStatus.ERROR, error: error.message });
             }
